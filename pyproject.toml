@@ -142,6 +142,8 @@ ignore_missing_imports = true
 
 
 [tool.ruff]
+# Vendored third-party sources (verbatim upstream copies) are not linted.
+extend-exclude = ["test/arcagi3/reference"]
 
 [tool.ruff.lint]
 extend-select = [
@@ -185,8 +187,17 @@ isort.required-imports = ["from __future__ import annotations"]
   "ARG002",
   "ARG005",
   "F841",
+  "RUF059",  # unused unpacked fixture values (env, params = maze_env)
+  "PLC0415",  # function-local imports are fine in tests
 ]
 "noxfile.py" = ["T20"]
+"scripts/**" = ["T20"]  # CLI scripts print progress to stdout
+# jaxtyping uses inline shape strings (e.g. Int[Array, "h w"]) which pyflakes
+# misreads as forward-reference annotations (F722). Local imports (PLC0415) are
+# required in a few spots to break circular imports between engine <-> games and
+# to keep rendering lazy. ARG002: Stoa's Environment/Wrapper interface mandates an
+# `env_params` argument on space methods even when a game doesn't consult it.
+"src/jaxarc/arcagi3/**" = ["F722", "PLC0415", "ARG002"]
 "notebooks/**" = [
   "T20",
   "PLC0415",

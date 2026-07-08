@@ -42,6 +42,13 @@ Transform observations and rewards with wrappers
 Train RL agents on ARC puzzles via Stoix
 :::
 
+:::{grid-item-card} 🕹️ ARC-AGI-3 Environments
+:link: arcagi3-environments
+:link-type: doc
+
+Interactive movement games with a pure-JAX ARC-AGI-3 runtime
+:::
+
 ::::
 
 ## Prerequisites
@@ -71,4 +78,6 @@ downloading-datasets
 visualizing-tasks.ipynb
 creating-agents.ipynb
 using-wrappers.ipynb
+stoix-integration
+arcagi3-environments
 ```
