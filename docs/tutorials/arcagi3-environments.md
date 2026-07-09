@@ -23,7 +23,7 @@ grid and its own state/params types — it does **not** share `jaxarc.envs`,
 | Game ID | Levels | Actions | Description |
 |---|---|---|---|
 | `simple_maze` | 2 | `RESET`, `ACTION1`–`ACTION4` | Navigate a maze to the exit; clearing the last level wins. Ported from ARCEngine's public `examples/simple_maze.py` (MIT). |
-| `complex_maze` | 5 | `RESET`, `ACTION1`–`ACTION4` | Maze navigation with **pushable blocks** (same-kind blocks annihilate on collision), **invisible walls** (solid but not drawn), a **moving maze** (level 5: pushing a wall translates the whole maze and its fixed sprites), and a per-level **energy budget** rendered as a pill border — exhausting it loses the game. Ported from ARCEngine's public `examples/complex_maze.py` (MIT). |
+| `complex_maze` | 5 | `RESET`, `ACTION1`–`ACTION4` | Maze navigation with **pushable blocks** (colliding blocks annihilate per ARCEngine's name-prefix rule — e.g. the floating block into the fixed one, which clears level 5's exit), **invisible walls** (solid but not drawn), a **moving maze** (level 5: pushing a wall translates the whole maze and its fixed sprites), and a per-level **energy budget** rendered as a pill border — exhausting it loses the game. Fully solvable; ported from ARCEngine's public `examples/complex_maze.py` (MIT). |
 
 More movement games can be added as pure transition functions; see
 [Adding a game](#adding-a-game).

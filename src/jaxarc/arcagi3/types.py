@@ -34,6 +34,11 @@ def _empty_bool_vec() -> Array:
     return jnp.zeros((0,), dtype=jnp.bool_)
 
 
+def _empty_bool_mat() -> Array:
+    """Default for the optional per-kind-pair annihilation matrix: empty (0, 0)."""
+    return jnp.zeros((0, 0), dtype=jnp.bool_)
+
+
 class ArcAgi3State(eqx.Module):
     """Dynamic per-episode state for an ARC-AGI-3 movement game.
 
@@ -146,8 +151,12 @@ class ArcAgi3Params(eqx.Module):
     # (simple_maze) leave them at their empty defaults. All per-kind arrays are
     # length ``num_kinds``; per-level arrays are length ``max_levels``.
     #
-    # - ``sprite_pushable`` : kinds that can be pushed (two same-kind blocks
-    #   annihilate on collision during a push).
+    # - ``sprite_pushable`` : kinds that can be pushed.
+    # - ``annihilates`` : ``annihilates[pushed_kind, other_kind]`` is True when
+    #   pushing ``pushed_kind`` into ``other_kind`` destroys both (ARCEngine's
+    #   asymmetric ``pushed.name.startswith(other.name)`` rule — e.g. the floating
+    #   ``block_orange_flex`` annihilates the fixed ``block_orange``). Shape
+    #   ``[num_kinds, num_kinds]``.
     # - ``sprite_is_maze``  : kinds that are maze walls (trigger move-maze).
     # - ``sprite_fixed``    : kinds tagged "fixed" — they translate together with
     #   the maze when it moves (player, exit, fixed block; NOT floating block).
@@ -159,6 +168,9 @@ class ArcAgi3Params(eqx.Module):
     has_moving_maze: bool = eqx.field(static=True, default=False)
     sprite_pushable: Bool[Array, " num_kinds"] = eqx.field(
         default_factory=_empty_bool_vec
+    )
+    annihilates: Bool[Array, "num_kinds num_kinds"] = eqx.field(
+        default_factory=_empty_bool_mat
     )
     sprite_is_maze: Bool[Array, " num_kinds"] = eqx.field(
         default_factory=_empty_bool_vec

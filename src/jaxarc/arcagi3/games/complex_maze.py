@@ -77,6 +77,22 @@ KIND_MAZE5 = 8
 NUM_KINDS = 9
 MAZE_KINDS = (KIND_MAZE1, KIND_MAZE2, KIND_MAZE3, KIND_MAZE4, KIND_MAZE5)
 
+# Sprite names, matching the ARCEngine source. Used to derive the annihilation
+# matrix via the engine's rule `pushed.name.startswith(other.name)` — so pushing
+# "block_orange_flex" into "block_orange" annihilates both (prefix match), but not
+# the reverse.
+KIND_NAMES = {
+    KIND_PLAYER: "player",
+    KIND_EXIT: "exit",
+    KIND_BLOCK: "block_orange",
+    KIND_BLOCK_FLEX: "block_orange_flex",
+    KIND_MAZE1: "maze_1",
+    KIND_MAZE2: "maze_2",
+    KIND_MAZE3: "maze_3",
+    KIND_MAZE4: "maze_4",
+    KIND_MAZE5: "maze_5",
+}
+
 SPRITE_H = 12
 SPRITE_W = 12
 
@@ -255,15 +271,19 @@ def _handle_collided_sprites(
 
         def push_block(state: ArcAgi3State) -> ArcAgi3State:
             pushed, block_collisions = try_move_sprite(state, params, i, dx, dy)
-            same_kind = (
-                block_collisions
-                & (pushed.sprite_kind == pushed.sprite_kind[i])
-                & pushed.sprite_active
-            )
-            hit_same = jnp.any(same_kind)
+            # Annihilation partners: sprites the pushed block hit whose (pushed,
+            # other) kind pair is flagged in the ``annihilates`` matrix. This
+            # encodes ARCEngine's asymmetric name-prefix rule
+            # (``pushed.name.startswith(other.name)``), so e.g. the floating
+            # block_orange_flex annihilates the fixed block_orange.
+            partner_kind_ok = params.annihilates[pushed.sprite_kind[i]][
+                pushed.sprite_kind
+            ]
+            partners = block_collisions & partner_kind_ok & pushed.sprite_active
+            hit_partner = jnp.any(partners)
 
             def annihilate(s: ArcAgi3State) -> ArcAgi3State:
-                partner = jnp.argmax(same_kind)
+                partner = jnp.argmax(partners)
                 s = set_sprite_removed(s, i)
                 return set_sprite_removed(s, partner)
 
@@ -271,7 +291,7 @@ def _handle_collided_sprites(
                 moved, _ = try_move_player(s, params, dx, dy)
                 return moved
 
-            return jax.lax.cond(hit_same, annihilate, follow, pushed)
+            return jax.lax.cond(hit_partner, annihilate, follow, pushed)
 
         def maybe_push_block(state: ArcAgi3State) -> ArcAgi3State:
             do_block = collisions[i] & pushable[i] & active_i
@@ -430,21 +450,41 @@ def _build_sprite_tables() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 
 def _build_kind_flags() -> dict[str, np.ndarray]:
-    """Per-kind push/maze/fixed flags (length NUM_KINDS).
+    """Per-kind push/maze/fixed flags and the annihilation matrix.
 
-    - pushable: both block kinds (block_orange and block_orange_flex).
-    - is_maze : all maze kinds.
+    - pushable: block kinds startswith "block" (block_orange, block_orange_flex).
+    - is_maze : maze kinds (name startswith "maze").
     - fixed   : "fixed"-tagged kinds that translate with the maze — player, exit,
       and the fixed block_orange. The floating block_orange_flex is NOT fixed.
+    - annihilates[p, o]: pushing kind ``p`` into kind ``o`` destroys both, iff
+      ``o`` is a block AND ``KIND_NAMES[p].startswith(KIND_NAMES[o])`` — a direct
+      port of ARCEngine's ``sprite.name.startswith(other_sprite.name)`` inside the
+      "block" branch. This is asymmetric: flex→orange annihilates, orange→flex
+      does not, and each block annihilates its own kind.
     """
     pushable = np.zeros((NUM_KINDS,), dtype=bool)
     is_maze = np.zeros((NUM_KINDS,), dtype=bool)
     fixed = np.zeros((NUM_KINDS,), dtype=bool)
-    pushable[KIND_BLOCK] = pushable[KIND_BLOCK_FLEX] = True
-    for k in MAZE_KINDS:
-        is_maze[k] = True
+    annihilates = np.zeros((NUM_KINDS, NUM_KINDS), dtype=bool)
+
+    for k, name in KIND_NAMES.items():
+        pushable[k] = name.startswith("block")
+        is_maze[k] = name.startswith("maze")
     fixed[KIND_PLAYER] = fixed[KIND_EXIT] = fixed[KIND_BLOCK] = True
-    return {"pushable": pushable, "is_maze": is_maze, "fixed": fixed}
+
+    for p, pname in KIND_NAMES.items():
+        for o, oname in KIND_NAMES.items():
+            # Annihilation only happens inside the "block" branch of the engine
+            # loop (the pushed sprite is a block), and requires the name-prefix.
+            if pname.startswith("block") and pname.startswith(oname):
+                annihilates[p, o] = True
+
+    return {
+        "pushable": pushable,
+        "is_maze": is_maze,
+        "fixed": fixed,
+        "annihilates": annihilates,
+    }
 
 
 def _build_levels() -> dict[str, np.ndarray]:
@@ -555,6 +595,7 @@ def make_params(*, transition_id: int, max_steps: int = 512) -> ArcAgi3Params:
         # Pushable blocks + moving maze.
         has_moving_maze=True,
         sprite_pushable=jnp.asarray(flags["pushable"]),
+        annihilates=jnp.asarray(flags["annihilates"]),
         sprite_is_maze=jnp.asarray(flags["is_maze"]),
         sprite_fixed=jnp.asarray(flags["fixed"]),
         level_move_maze=jnp.asarray(levels["move_maze"]),

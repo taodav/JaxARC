@@ -112,6 +112,9 @@ enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 warn_unreachable = true
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+# Vendored third-party parity sources (verbatim upstream copies, test-only,
+# never imported at runtime) are not type-checked.
+exclude = ['^test/arcagi3/reference/']
 
 [[tool.mypy.overrides]]
 module = "jaxarc.*"
@@ -137,7 +140,19 @@ module = [
   "hydra_core",
   "stoa",
   "stoa.*",
+  # Optional test-only dependency (ARC-AGI-3 parity); not a JaxARC dependency
+  # and has no type stubs.
+  "arcengine",
 ]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# pytest is installed into the mypy hook env (additional_dependencies), so mypy
+# would follow `import pytest` into pytest's own sources. pytest uses 3.10+
+# `match` statements, which fail to parse under python_version = "3.9". Skip
+# following into pytest rather than type-checking a third-party lib.
+module = ["pytest", "pytest.*", "_pytest.*"]
+follow_imports = "skip"
 ignore_missing_imports = true
 
 

@@ -90,11 +90,11 @@ def solve_game(params, *, max_depth: int = 120) -> list[int]:
     pruning GAME_OVER branches. Works for simple_maze and complex_maze alike.
     Results are cached per ``params.game_id``.
 
-    Some levels are not solvable by ACTION1-4 movement alone (e.g. complex_maze's
-    moving-maze level 5 — verified to behave identically in the official engine).
-    When a level's reachable state space is exhausted without progress, the search
-    **stops and returns the trace so far** rather than raising, so the canonical
-    trace exercises every solvable level plus entry into the first unsolvable one.
+    Both built-in games are fully solvable (simple_maze and complex_maze, whose
+    level 5 is cleared by pushing the floating block into the fixed one). If a
+    level's reachable state space is ever exhausted without progress, the search
+    **stops and returns the trace so far** rather than raising — a safety net so a
+    future unsolvable level still yields a usable partial trace.
     """
     cached = _SOLUTION_CACHE.get(params.game_id)
     if cached is not None:
@@ -126,8 +126,8 @@ def solve_game(params, *, max_depth: int = 120) -> list[int]:
                     seen.add(key)
                     q.append((ns, [*path, a]))
         if found is None:
-            # Level unsolvable by movement: stop here (see docstring). The trace
-            # still covers all solved levels plus the entry into this one.
+            # Safety net: an unsolvable level stops the search (see docstring)
+            # rather than raising. Not expected for the built-in games.
             break
         actions.extend(found[0])
         cur = found[1]

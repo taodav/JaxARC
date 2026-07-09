@@ -10,12 +10,12 @@ trace and asserts they agree on the final rendered frame after each action and o
 the shared per-step state fields (``game_state``, ``levels_completed``) across the
 **entire** trace, byte-for-byte.
 
-The committed trace clears levels 1-4 and enters the moving-maze level 5. Level 5
-is not solvable by pure ACTION1-4 movement (the exit sits behind a pushable block
-against a wall, and the maze itself translates) — and crucially the **official
-engine behaves identically**, so both end the trace at ``levels_completed=4`` /
-``NOT_FINISHED``. The value of this test is the byte-exact agreement on the
-moving-maze mechanic, blocks, invisible walls, and energy overlay throughout.
+The committed trace solves all 5 levels to WIN, including the moving-maze level
+5: the exit is walled behind the fixed block_orange, cleared by pushing the
+floating block_orange_flex into it (ARCEngine's asymmetric name-prefix
+annihilation). This exercises byte-exact agreement on the moving-maze mechanic,
+pushable blocks + annihilation, invisible walls, and the energy overlay
+throughout, ending in WIN in both engines.
 
 Run with::
 

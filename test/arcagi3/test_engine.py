@@ -185,28 +185,29 @@ def test_goal_advances_level(maze_env):
     assert float(ts.reward) == 0.0
 
 
-def test_full_playthrough_wins_with_sparse_reward(maze_env):
-    # simple_maze is fully solvable by the committed trace, ending in WIN.
+def test_full_playthrough_wins_with_sparse_reward(game_env):
+    # Both games are fully solvable by their committed traces, ending in WIN.
     from jaxarc.types import StepType
 
-    env, params = maze_env
+    env, params = game_env
     state, ts = env.reset(KEY)
     total_reward = 0.0
     for a in load_solution(params.game_id):
         state, ts = env.step(state, a)
         total_reward += float(ts.reward)
     assert int(state.game_state) == WIN
-    # simple_maze calls win() directly on the last level, so levels_completed
-    # tops out at max_levels - 1.
-    assert int(state.levels_completed) == params.max_levels - 1
+    # simple_maze calls win() directly on the last level (levels_completed tops out
+    # at max_levels - 1); complex_maze uses next_level() uniformly and reaches
+    # max_levels. Either way WIN is reached and reward is sparse.
+    assert int(state.levels_completed) in (params.max_levels - 1, params.max_levels)
     assert bool(state.done)
     assert int(ts.step_type) == int(StepType.TERMINATED)
     # Sparse: exactly one unit of reward, on the winning transition.
     assert total_reward == pytest.approx(1.0)
 
 
-def test_terminal_state_ignores_further_actions(maze_env):
-    env, params = maze_env
+def test_terminal_state_ignores_further_actions(game_env):
+    env, params = game_env
     state, ts = env.reset(KEY)
     for a in load_solution(params.game_id):
         state, ts = env.step(state, a)
@@ -217,21 +218,50 @@ def test_terminal_state_ignores_further_actions(maze_env):
     assert float(ts_after.reward) == 0.0
 
 
-def test_complex_maze_progresses_through_solvable_levels():
-    # complex_maze's committed trace clears levels 1-4 (the moving-maze level 5 is
-    # not solvable by pure movement — verified to match the official engine). It
-    # should reach level 5 with 4 levels completed and NOT be terminal.
-    env, params = make_arcagi3("complex_maze")
-    state, ts = env.reset(KEY)
-    reward = 0.0
-    for a in load_solution("complex_maze"):
-        state, ts = env.step(state, a)
-        reward += float(ts.reward)
-    assert int(state.levels_completed) == 4
-    assert int(state.level_index) == 4  # on level 5 (0-indexed)
-    assert int(state.game_state) == NOT_FINISHED
-    assert not bool(state.done)
-    assert reward == 0.0  # no WIN reached, so no sparse reward
+def test_complex_maze_flex_block_annihilates_fixed_block():
+    # ARCEngine's asymmetric annihilation: pushing the floating block_orange_flex
+    # (KIND_BLOCK_FLEX) into the fixed block_orange (KIND_BLOCK) destroys both
+    # (name-prefix rule). This is what unlocks level 5.
+    from jaxarc.arcagi3.games.complex_maze import (
+        KIND_BLOCK,
+        KIND_BLOCK_FLEX,
+        KIND_PLAYER,
+        _pushing_move,
+    )
+
+    _env, params = _complex_env()
+    # player(1,1), flex(2,1), orange(3,1): push right -> flex hits orange -> both
+    # annihilate; player does NOT follow (annihilation branch).
+    s = _synthetic_state(
+        params,
+        [(KIND_PLAYER, 1, 1), (KIND_BLOCK_FLEX, 2, 1), (KIND_BLOCK, 3, 1)],
+    )
+    s2 = _pushing_move(params, s, jnp.int32(1), jnp.int32(0))
+    assert not bool(s2.sprite_active[1])  # flex removed
+    assert not bool(s2.sprite_active[2])  # orange removed
+    assert (int(s2.sprite_x[0]), int(s2.sprite_y[0])) == (1, 1)
+
+
+def test_complex_maze_fixed_block_does_not_annihilate_flex():
+    # The rule is asymmetric: pushing orange into flex does NOT annihilate
+    # ("block_orange".startswith("block_orange_flex") is False). The orange block
+    # is simply pushed and the player follows.
+    from jaxarc.arcagi3.games.complex_maze import (
+        KIND_BLOCK,
+        KIND_BLOCK_FLEX,
+        KIND_PLAYER,
+        _pushing_move,
+    )
+
+    _env, params = _complex_env()
+    s = _synthetic_state(
+        params,
+        [(KIND_PLAYER, 1, 1), (KIND_BLOCK, 2, 1), (KIND_BLOCK_FLEX, 3, 1)],
+    )
+    s2 = _pushing_move(params, s, jnp.int32(1), jnp.int32(0))
+    # orange can't move (flex blocks it) so nothing is removed; player stays.
+    assert bool(s2.sprite_active[1])
+    assert bool(s2.sprite_active[2])
 
 
 # --- Truncation -------------------------------------------------------------
