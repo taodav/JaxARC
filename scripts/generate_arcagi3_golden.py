@@ -36,7 +36,7 @@ from test.arcagi3.golden_common import build_traces, run_trace  # noqa: E402
 GOLDEN_ROOT = _REPO_ROOT / "test" / "arcagi3" / "golden"
 
 # Games to snapshot; extend as new movement games are ported.
-GAMES = ["simple_maze", "complex_maze"]
+GAMES = ["simple_maze", "complex_maze", "merge"]
 
 
 def generate_game(game_id: str) -> None:

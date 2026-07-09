@@ -32,13 +32,24 @@ def initial_sprites_for_level(
     params: ArcAgi3Params, level_index: Int[Array, ""]
 ) -> dict:
     """Gather the initial sprite component arrays for a level as a dict of arrays."""
+    kinds = params.init_sprite_kind[level_index]
+    # Per-slot initial pixels: use the explicit per-(level, slot) override when the
+    # game provides one (e.g. merge's rotated walls), else gather from the kind
+    # tile. The `.size` check is static (shapes are known at trace time).
+    if params.init_sprite_pixels.size > 0:
+        init_pixels = params.init_sprite_pixels[level_index]
+    else:
+        init_pixels = params.sprite_pixels[kinds]
     return {
         "sprite_x": params.init_sprite_x[level_index],
         "sprite_y": params.init_sprite_y[level_index],
-        "sprite_kind": params.init_sprite_kind[level_index],
+        "sprite_kind": kinds,
         "sprite_active": params.init_sprite_active[level_index],
         "sprite_visible": params.init_sprite_visible[level_index],
         "sprite_collidable": params.init_sprite_collidable[level_index],
+        # Each slot's initial pixels; games that reshape sprites at runtime (merge)
+        # mutate these afterwards.
+        "sprite_pixels": init_pixels,
     }
 
 
@@ -57,6 +68,7 @@ def load_level(
         sprite_active=init["sprite_active"],
         sprite_visible=init["sprite_visible"],
         sprite_collidable=init["sprite_collidable"],
+        sprite_pixels=init["sprite_pixels"],
     )
 
 
@@ -114,12 +126,12 @@ def try_move_sprite(
     mx, my = state.sprite_x[mover], state.sprite_y[mover]
     nx, ny = mx + dx, my + dy
 
-    mover_pixels = params.sprite_pixels[state.sprite_kind[mover]]
+    mover_pixels = state.sprite_pixels[mover]
     mover_blocking = params.sprite_blocking[state.sprite_kind[mover]]
 
     def check_other(idx: Int[Array, ""]) -> Bool[Array, ""]:
         other_kind = state.sprite_kind[idx]
-        other_pixels = params.sprite_pixels[other_kind]
+        other_pixels = state.sprite_pixels[idx]
         other_blocking = params.sprite_blocking[other_kind]
         # Exclude self, inactive, and non-collidable others (ARCEngine rules).
         eligible = (
@@ -270,6 +282,69 @@ def move_sprite_unchecked(
     )
 
 
+def _shift_tile(
+    tile: Int[Array, "sh sw"], dy: Int[Array, ""], dx: Int[Array, ""]
+) -> Int[Array, "sh sw"]:
+    """Shift a tile's content down by ``dy`` and right by ``dx`` (both >= 0).
+
+    Exposed cells are filled with TRANSPARENT; content shifted past the bottom/
+    right edge is dropped (non-wrapping). ``out[r, c] = tile[r - dy, c - dx]``.
+    """
+    from .constants import TRANSPARENT
+
+    sh, sw = tile.shape
+    r = jnp.arange(sh)[:, None]
+    c = jnp.arange(sw)[None, :]
+    src_r = r - dy
+    src_c = c - dx
+    valid = (src_r >= 0) & (src_r < sh) & (src_c >= 0) & (src_c < sw)
+    gathered = tile[jnp.clip(src_r, 0, sh - 1), jnp.clip(src_c, 0, sw - 1)]
+    return jnp.where(valid, gathered, TRANSPARENT)
+
+
+def merge_into(
+    state: ArcAgi3State,
+    p: Int[Array, ""],
+    c: Int[Array, ""],
+) -> ArcAgi3State:
+    """Merge sprite ``c`` into sprite ``p`` (port of ``Sprite.merge`` + level swap).
+
+    Reproduces ARCEngine exactly: the merged sprite spans the combined bounding
+    box of both sprites; ``c``'s non-transparent pixels are painted first, then
+    ``p``'s over the top (``p`` wins ties); the result anchors at the bbox min
+    corner. Here we write the composited pixels into ``p``'s slot buffer, move
+    ``p`` to ``(min_x, min_y)``, and deactivate ``c``.
+
+    Fixed-shape/JIT-safe: because the anchor is the min corner, the merged content
+    is top-left-aligned in the ``sprite_h x sprite_w`` buffer (chosen large enough
+    to bound any merge — 16x16 for merge), so a non-wrapping shift + composite
+    matches ARCEngine's variable-size merged array when rendered at ``(min_x,
+    min_y)``.
+    """
+    from .constants import TRANSPARENT
+
+    px, py = state.sprite_x[p], state.sprite_y[p]
+    cx, cy = state.sprite_x[c], state.sprite_y[c]
+
+    min_x = jnp.minimum(px, cx)
+    min_y = jnp.minimum(py, cy)
+
+    # Shift each sprite's content so the bbox min corner maps to buffer (0, 0).
+    shifted_c = _shift_tile(state.sprite_pixels[c], cy - min_y, cx - min_x)
+    shifted_p = _shift_tile(state.sprite_pixels[p], py - min_y, px - min_x)
+
+    # Paint c first, then p's non-transparent pixels over the top (p wins ties).
+    merged = jnp.where(shifted_p != TRANSPARENT, shifted_p, shifted_c)
+
+    state = eqx_replace(
+        state,
+        sprite_x=state.sprite_x.at[p].set(min_x),
+        sprite_y=state.sprite_y.at[p].set(min_y),
+        sprite_pixels=state.sprite_pixels.at[p].set(merged),
+    )
+    return set_sprite_removed(state, c)
+
+
 def eqx_replace(state: ArcAgi3State, **changes) -> ArcAgi3State:
     """Small helper: functional update of an Equinox module via ``tree_at``.
 
@@ -314,6 +389,7 @@ __all__ = [
     "is_last_level",
     "load_level",
     "lose_game",
+    "merge_into",
     "move_sprite_unchecked",
     "next_level_or_win",
     "player_index",

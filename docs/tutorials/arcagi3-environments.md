@@ -24,9 +24,17 @@ grid and its own state/params types — it does **not** share `jaxarc.envs`,
 |---|---|---|---|
 | `simple_maze` | 2 | `RESET`, `ACTION1`–`ACTION4` | Navigate a maze to the exit; clearing the last level wins. Ported from ARCEngine's public `examples/simple_maze.py` (MIT). |
 | `complex_maze` | 5 | `RESET`, `ACTION1`–`ACTION4` | Maze navigation with **pushable blocks** (colliding blocks annihilate per ARCEngine's name-prefix rule — e.g. the floating block into the fixed one, which clears level 5's exit), **invisible walls** (solid but not drawn), a **moving maze** (level 5: pushing a wall translates the whole maze and its fixed sprites), and a per-level **energy budget** rendered as a pill border — exhausting it loses the game. Fully solvable; ported from ARCEngine's public `examples/complex_maze.py` (MIT). |
+| `merge` | 3 | `RESET`, `ACTION1`–`ACTION4` | The player is a single pixel that **absorbs sprites on contact**, growing into a composite shape (runtime sprite merging). A level is won when the merged player's rendered pixels **exactly match** a target sprite. Ported from ARCEngine's public `examples/merge.py` (MIT) — a faithful, byte-for-byte parity-verified port. Levels 1–2 win by movement; level 3's win state is unreachable from its start under the game's own action set (exhaustive search confirms, and the official engine agrees) — a property of that demo level, not a missing action. |
 
 More movement games can be added as pure transition functions; see
 [Adding a game](#adding-a-game).
+
+```{note}
+`merge` needed a per-sprite pixel buffer (`ArcAgi3State.sprite_pixels`) because
+the player's shape changes at runtime — unlike the maze games, whose sprites only
+translate. This is an additive change: the maze games' per-sprite buffers are
+constant copies of their kind tiles, so their behaviour is byte-identical.
+```
 
 ```{note}
 `complex_maze` adds mechanics beyond `simple_maze`: an energy/lose condition

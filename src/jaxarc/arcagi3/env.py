@@ -37,6 +37,10 @@ def _empty_state(params: ArcAgi3Params, key: Array) -> ArcAgi3State:
     """Allocate a zeroed state with the correct shapes; ``reset_full`` fills it."""
     zeros_s = jnp.zeros((params.max_sprites,), dtype=jnp.int32)
     false_s = jnp.zeros((params.max_sprites,), dtype=jnp.bool_)
+    # Placeholder per-sprite pixel buffer; load_level (via reset_full) fills it.
+    pixels = jnp.zeros(
+        (params.max_sprites, params.sprite_h, params.sprite_w), dtype=jnp.int32
+    )
     return ArcAgi3State(
         step_count=jnp.asarray(0, dtype=jnp.int32),
         action_count=jnp.asarray(0, dtype=jnp.int32),
@@ -50,6 +54,7 @@ def _empty_state(params: ArcAgi3Params, key: Array) -> ArcAgi3State:
         sprite_active=false_s,
         sprite_visible=false_s,
         sprite_collidable=false_s,
+        sprite_pixels=pixels,
         key=key.astype(jnp.uint32),
     )
 

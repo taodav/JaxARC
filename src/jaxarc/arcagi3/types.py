@@ -39,6 +39,11 @@ def _empty_bool_mat() -> Array:
     return jnp.zeros((0, 0), dtype=jnp.bool_)
 
 
+def _empty_pixels_4d() -> Array:
+    """Default for the optional per-(level, slot) initial-pixels override: empty."""
+    return jnp.zeros((0, 0, 0, 0), dtype=jnp.int32)
+
+
 class ArcAgi3State(eqx.Module):
     """Dynamic per-episode state for an ARC-AGI-3 movement game.
 
@@ -64,6 +69,13 @@ class ArcAgi3State(eqx.Module):
     sprite_active: Bool[Array, " max_sprites"]  # slot in use this level
     sprite_visible: Bool[Array, " max_sprites"]  # rendered if active & visible
     sprite_collidable: Bool[Array, " max_sprites"]  # participates in collisions
+
+    # Per-sprite CURRENT pixels (TRANSPARENT-padded to sprite_h x sprite_w). Reset
+    # gathers these from Params.sprite_pixels[kind]; games with runtime-reshaping
+    # sprites (merge) mutate a slot's buffer in place. Rendering and collision read
+    # this per-sprite buffer, not the per-kind table — so a slot's appearance can
+    # diverge from its kind. For static games it stays a constant copy of the tile.
+    sprite_pixels: Int[Array, "max_sprites sprite_h sprite_w"]
 
     # --- RNG ---------------------------------------------------------------
     key: UInt[Array, 2]
@@ -199,6 +211,27 @@ class ArcAgi3Params(eqx.Module):
     ui_pill_off_color: int = eqx.field(static=True, default=0)
     ui_pill_x: Int[Array, " num_pills"] = eqx.field(default_factory=_empty_int_vec)
     ui_pill_y: Int[Array, " num_pills"] = eqx.field(default_factory=_empty_int_vec)
+
+    # --- Merge game (optional; per-kind flags; defaults => disabled) -------
+    # Drives the `merge` game. Only its transition reads these.
+    # - ``sprite_is_merge``  : kinds the player absorbs on contact (tag "merge").
+    # - ``sprite_is_target`` : the goal kind(s); win when the merged player's
+    #   rendered region equals the (single active) target's.
+    sprite_is_merge: Bool[Array, " num_kinds"] = eqx.field(
+        default_factory=_empty_bool_vec
+    )
+    sprite_is_target: Bool[Array, " num_kinds"] = eqx.field(
+        default_factory=_empty_bool_vec
+    )
+
+    # Optional per-(level, slot) initial pixel buffers, shape
+    # ``[max_levels, max_sprites, sprite_h, sprite_w]``. When non-empty,
+    # ``load_level`` uses these instead of gathering from the per-kind tile — for
+    # sprites whose initial appearance is instance-specific (e.g. merge level 3
+    # rotates the room walls 180). Empty default => gather from ``sprite_pixels``.
+    init_sprite_pixels: Int[Array, "max_levels max_sprites sprite_h sprite_w"] = (
+        eqx.field(default_factory=_empty_pixels_4d)
+    )
 
     def __check_init__(self) -> None:
         assert self.reset_mode in ("level", "full"), self.reset_mode

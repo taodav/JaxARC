@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Int
+from jaxtyping import Array, Bool, Int
 
 from .constants import GRID_SIZE
 from .types import ArcAgi3Params, ArcAgi3State
@@ -81,8 +81,7 @@ def composite(params: ArcAgi3Params, state: ArcAgi3State) -> Int[Array, "H W"]:
     def paint(
         canvas: Int[Array, "H W"], idx: Int[Array, ""]
     ) -> tuple[Int[Array, "H W"], None]:
-        kind = state.sprite_kind[idx]
-        pixels = params.sprite_pixels[kind]  # (sprite_h, sprite_w)
+        pixels = state.sprite_pixels[idx]  # (sprite_h, sprite_w), per-sprite buffer
         values, mask = _tile_to_grid_values(
             pixels, state.sprite_x[idx], state.sprite_y[idx], h, w
         )
@@ -91,6 +90,79 @@ def composite(params: ArcAgi3Params, state: ArcAgi3State) -> Int[Array, "H W"]:
 
     canvas, _ = jax.lax.scan(paint, canvas, order)
     return canvas
+
+
+def _sprite_window(
+    canvas: Int[Array, "H W"],
+    x: Int[Array, ""],
+    y: Int[Array, ""],
+    w: Int[Array, ""],
+    h: Int[Array, ""],
+    sprite_h: int,
+    sprite_w: int,
+) -> tuple[Int[Array, "sprite_h sprite_w"], Bool[Array, "sprite_h sprite_w"]]:
+    """Extract the ``h x w`` raw-camera region at ``(x, y)``, port of ``get_pixels``.
+
+    Returns a fixed ``sprite_h x sprite_w`` window (top-left aligned) plus a valid
+    mask marking the cells that lie within the requested ``h x w`` region — so two
+    windows can be compared over their genuine (dynamic) extent without dynamic
+    shapes. ``canvas`` is the raw composite (``camera._raw_render``).
+    """
+    ch, cw = canvas.shape
+    rows = jnp.arange(sprite_h)[:, None]
+    cols = jnp.arange(sprite_w)[None, :]
+    src_r = y + rows
+    src_c = x + cols
+    in_canvas = (src_r >= 0) & (src_r < ch) & (src_c >= 0) & (src_c < cw)
+    window = canvas[jnp.clip(src_r, 0, ch - 1), jnp.clip(src_c, 0, cw - 1)]
+    valid = (rows < h) & (cols < w) & in_canvas
+    return window, valid
+
+
+def region_equal(
+    params: ArcAgi3Params,
+    state: ArcAgi3State,
+    slot_a: Int[Array, ""],
+    slot_b: Int[Array, ""],
+) -> Bool[Array, ""]:
+    """Whether two sprites' rendered raw-camera regions are equal.
+
+    Port of ``check_win_condition``: ``np.array_equal(get_pixels_at_sprite(a),
+    get_pixels_at_sprite(b))``. Each region is the raw composite sliced at the
+    sprite's position to its non-transparent bbox extent. Equality requires
+    **matching extents** (``np.array_equal`` is False on shape mismatch) AND equal
+    content over that extent.
+    """
+    from .collisions import _bbox_dims
+
+    canvas = composite(params, state)
+    aw, ah = _bbox_dims(state.sprite_pixels[slot_a])
+    bw, bh = _bbox_dims(state.sprite_pixels[slot_b])
+
+    dims_match = (aw == bw) & (ah == bh)
+
+    wa, va = _sprite_window(
+        canvas,
+        state.sprite_x[slot_a],
+        state.sprite_y[slot_a],
+        aw,
+        ah,
+        params.sprite_h,
+        params.sprite_w,
+    )
+    wb, _vb = _sprite_window(
+        canvas,
+        state.sprite_x[slot_b],
+        state.sprite_y[slot_b],
+        bw,
+        bh,
+        params.sprite_h,
+        params.sprite_w,
+    )
+    # Compare only within region a's valid window; dims_match guarantees region b
+    # has the same extent, so the two valid masks coincide.
+    content_equal = jnp.all(jnp.where(va, wa == wb, True))
+    return dims_match & content_equal
 
 
 def scale_and_letterbox(
@@ -182,4 +254,10 @@ def render(params: ArcAgi3Params, state: ArcAgi3State) -> Int[Array, "64 64"]:
     return draw_energy_overlay(frame, params, state)
 
 
-__all__ = ["composite", "draw_energy_overlay", "render", "scale_and_letterbox"]
+__all__ = [
+    "composite",
+    "draw_energy_overlay",
+    "region_equal",
+    "render",
+    "scale_and_letterbox",
+]

@@ -20,7 +20,7 @@ from jaxarc.arcagi3 import make_arcagi3
 from .golden_common import build_traces, run_trace
 
 GOLDEN_ROOT = Path(__file__).parent / "golden"
-GAMES = ["simple_maze", "complex_maze"]
+GAMES = ["simple_maze", "complex_maze", "merge"]
 
 
 def _trace_names(game_id: str) -> list[str]:
